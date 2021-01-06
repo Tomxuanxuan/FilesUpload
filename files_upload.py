@@ -3,7 +3,6 @@
 """
 @author: tx
 @File    : files_upload.py
-@Time    : 2021-01-05 15:48
 @desc    : 文件上传
 """
 import os
@@ -12,23 +11,16 @@ from ftplib import FTP
 from ftplib import error_perm
 import socket
 
-from flask import g, current_app
 from datetime import datetime
 from qcloud_cos import CosConfig
 from qcloud_cos import CosS3Client
 
-from apps.system.models.apps import Apps
-from apps.system.models.fso import FileSystemObject
 
 
 class FilesUpload:
-    def __init__(self):
-        self.app_id = g.app_id
-        self.bufsize = 1024
-        self.sys_app = Apps.query.filter_by(app_key=g.app_id, status=1).first()
-
-        self.upload_key = self.sys_app.app_upload.upload_key
-        self.upload_api = self.sys_app.app_upload.upload_api
+    def __init__(self, upload_key, bufsize=1024):
+        self.bufsize = bufsize
+        self.upload_key = upload_key    # tengxun 腾讯云   ftp ftp上传
 
     def files_upload(self, files):
         _uploads = []
@@ -40,12 +32,12 @@ class FilesUpload:
 
     # 腾讯上传
     def cos_config(self):
-        """公共配置"""
+        """公共配置 相关参数需要进行配置，或从数据库进行获取"""
         token = None
         config = CosConfig(
-            Region=self.sys_app.app_upload.cos_region,
-            Secret_id=self.sys_app.app_upload.cos_secret_id,
-            Secret_key=self.sys_app.app_upload.cos_secret_key,
+            Region='cos_region',
+            Secret_id='cos_secret_id',
+            Secret_key='cos_secret_key',
             Timeout=1200,  # 20分钟
             Token=token
         )  # 获取配置对象
@@ -57,15 +49,15 @@ class FilesUpload:
         client = CosS3Client(config)
         if isinstance(files, list):
             for file in files:
-                _upload = self.rebuild_file(client, self.app_id, file)
+                _upload = self.rebuild_file(client, file)
                 # print(response)
                 # {'ETag': '"9987668b99a448119e71234b9a40dbe7"', 'Connection': 'keep-alive', 'Server': 'tencent-cos', 'Date': 'Tue, 24 Mar 2020 13:04:20 GMT', 'x-cos-request-id': 'NWU3YTA1NTRfMzA5ZDA4MDlfNDk0N18zMmJmNDRm', 'Content-Length': '0'}
                 _uploads.append(_upload)
         else:
-            _uploads.append(self.rebuild_file(client, self.app_id, files))
+            _uploads.append(self.rebuild_file(client, files))
         return _uploads  # 返回列表
 
-    def rebuild_file(self, client, appId, file):
+    def rebuild_file(self, client, file):
         _upload = {}  # 在里面定义，每次都可以刷新，不然返回的结果都一样
         # file字典格式content_length=0,content_type='image/jpeg',filename='***.jpg',mimetype='image/jpeg',name='file',stream
         today = datetime.strftime(datetime.now(), '%Y%m%d')
@@ -74,20 +66,18 @@ class FilesUpload:
         file_suffix = os.path.splitext(upload_name)[1]
         file_type = file.mimetype
         save_name = uuid_str + file_suffix
-        file_path = 'app/%s/%s/%s' % (appId, today, save_name)  # app/appId/年-月-日/filename
+        file_path = 'app/%s/%s/%s' % (today, save_name)  # app/appId/年-月-日/filename
         blob = file.read()
-        file_size = len(blob)  # 不知道会不会产生文件太大读入内存太多
-        _upload['appId'] = appId
+        file_size = len(blob)  
         _upload['uploadName'] = upload_name
         _upload['saveName'] = save_name
         _upload['fileSuffix'] = file_suffix
         _upload['fileType'] = file_type
         _upload['filePath'] = file_path
-        # _upload['fileUrl'] = 'https://%s.cos.%s.myqcloud.com/%s' % (current_app.config['COS_BUCKET'], current_app.config['COS_REGION'], file_path)
-        _upload['fileUrl'] = 'http://files.juxincpa.com/' + file_path
+        _upload['fileUrl'] = 'http://xxx.com' + file_path
         _upload['fileSize'] = file_size
         response = client.put_object(
-            Bucket=self.sys_app.app_upload.cos_bucket,
+            Bucket='cos_bucket',
             Body=blob,  # 上传的文件对象
             Key=file_path,  # 带路径的文件名，无须/开头
             CacheControl='no-cache'
@@ -104,29 +94,29 @@ class FilesUpload:
             ftp.login(username, password)  # 登录，如果匿名登录则用空串代替即可
             print(ftp.getwelcome())  # 打印欢迎信息
         except (socket.error, socket.gaierror):  # ftp 连接错误
-            current_app.logger.error("ERROR: 连接服务器出错 [{0}:{1}]".format(host, port))
+            print("ERROR: 连接服务器出错 [{0}:{1}]".format(host, port))
             return None
         except error_perm:  # 用户登录认证错误
-            current_app.logger.error("ERROR: 身份认证错误 ")
+            print("ERROR: 身份认证错误 ")
             return None
         return ftp
 
     def ftp_file_upload(self, files):
         _uploads = []
-        host = self.sys_app.app_upload.upload_api
+        host = 'upload_api'
         port = 21
-        username = self.sys_app.app_upload.ftp_username
-        password = self.sys_app.app_upload.ftp_password
+        username = 'ftp_username'
+        password = 'ftp_password'
 
         ftp = self.ftpconnect(host, port, username, password)
 
-        # 创建appId目录
+        # 创建files_test目录
         file_list = ftp.nlst()
-        if self.app_id not in file_list:
+        if 'files_test' not in file_list:
             res = ftp.mkd(self.app_id)
 
         # 进入目录
-        ftp.cwd(self.app_id)
+        ftp.cwd('files_test')
 
         # 上传文件
         if isinstance(files, list):
@@ -156,7 +146,6 @@ class FilesUpload:
             print('ftp 文件上传完成', upload_name)
         ftp.set_debuglevel(0)
 
-        _upload['appId'] = self.app_id
         _upload['uploadName'] = upload_name
         _upload['saveName'] = save_name
         _upload['fileSuffix'] = file_suffix
@@ -167,24 +156,6 @@ class FilesUpload:
 
         return _upload
 
-
-def insert_sys_file(uploaded):
-    """
-    插入到文件表
-    :param uploaded:
-    :return:
-    """
-    file = FileSystemObject()
-    file.upload_name = uploaded['uploadName']
-    file.save_name = uploaded['saveName']
-    file.file_path = uploaded['filePath']
-    file.file_type = uploaded['fileType']
-    file.file_suffix = uploaded['fileSuffix']
-    file.file_size = uploaded['fileSize']
-    file.file_url = uploaded['fileUrl']
-    file.add()
-    uploaded['id'] = file.id
-    return uploaded
 
 
 
